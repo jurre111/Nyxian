@@ -2,7 +2,7 @@ name: Update Nyxian AltStore JSON
 
 on:
   schedule:
-    - cron: "*/10 * * * *"  # every 10 minutes
+    - cron: "*/35 * * * *"  # every 10 minutes
   workflow_dispatch:
 
 jobs:
