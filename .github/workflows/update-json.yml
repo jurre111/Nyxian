@@ -12,35 +12,47 @@ jobs:
     steps:
     - uses: actions/checkout@v3
 
-    - name: Get latest Nyxian release
+    - name: Get all Nyxian releases
       id: nyx
       run: |
-        # Download latest release metadata
-        curl -s https://api.github.com/repos/ProjectNyxian/Nyxian/releases/latest > release.json
+        echo "Fetching all releases..."
+        RELEASES_JSON=$(curl -s https://api.github.com/repos/ProjectNyxian/Nyxian/releases)
 
-        URL=$(jq -r '.assets[] | select(.name | endswith(".ipa")) | .browser_download_url' release.json)
-        DATE=$(jq -r '.published_at' release.json)
-        SIZE=$(curl -sI "$URL" | grep -i Content-Length | awk '{print $2}' | tr -d '\r')
-        BODY=$(jq -r '.body' release.json | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')
+        for i in $(seq 0 $(($(echo "$RELEASES_JSON" | jq 'length') - 1))); do
+            URL=$(echo "$RELEASES_JSON" | jq -r ".[$i].assets[]? | select(.name | endswith(\".ipa\")) | .browser_download_url")
+            if [ -n "$URL" ]; then
+                TAG=$(echo "$RELEASES_JSON" | jq -r ".[$i].tag_name")
+                DATE=$(echo "$RELEASES_JSON" | jq -r ".[$i].published_at")
+                BODY=$(echo "$RELEASES_JSON" | jq -r ".[$i].body" | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')
+                SIZE=$(curl -sI "$URL" | grep -i Content-Length | awk '{print $2}' | tr -d '\r')
 
-        echo "URL=$URL" >> $GITHUB_ENV
-        echo "DATE=$DATE" >> $GITHUB_ENV
-        echo "SIZE=$SIZE" >> $GITHUB_ENV
-        echo "BODY=$BODY" >> $GITHUB_ENV
+                echo "Found release $TAG at $URL"
+
+                # Exporteer variabelen
+                echo "URL=$URL" >> $GITHUB_ENV
+                echo "DATE=$DATE" >> $GITHUB_ENV
+                echo "SIZE=$SIZE" >> $GITHUB_ENV
+                echo "BODY=$BODY" >> $GITHUB_ENV
+                echo "TAG=$TAG" >> $GITHUB_ENV
+
+                break  # gebruik de eerste gevonden release met IPA
+            fi
+        done
 
     - name: Update AltStore JSON
       run: |
         FILE=altstore.json
 
-        # Check if this downloadURL already exists
+        # Controleer of deze downloadURL al bestaat
         if jq -e ".apps[0].versions[] | select(.downloadURL==\"${URL}\")" "$FILE" > /dev/null; then
-          echo "Version with this URL already exists"
+          echo "Version with URL ${URL} already exists"
         else
-          echo "Adding new version with URL ${URL}"
+          echo "Adding new version ${TAG}"
           jq ".apps[0].versions += [{
             \"downloadURL\": \"${URL}\",
             \"size\": ${SIZE},
             \"version\": \"1.0\",
+            \"buildVersion\": \"${TAG}\",
             \"date\": \"${DATE}\",
             \"localizedDescription\": \"${BODY}\",
             \"minOSVersion\": null
@@ -50,5 +62,5 @@ jobs:
     - name: Commit changes
       uses: stefanzweifel/git-auto-commit-action@v4
       with:
-        commit_message: "Update Nyxian AltStore JSON for release ${{ env.URL }}"
+        commit_message: "Update Nyxian AltStore JSON for release ${{ env.TAG }}"
         commit_user_name: "GitHub Action"
