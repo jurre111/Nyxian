@@ -1,0 +1,90 @@
+{
+  "name": "Nyxian",
+  "subtitle": "The Latest Nyxian Build",
+  "description": "Here you will find the latest weekly build of Nyxian",
+  "iconURL": "https://i.imgur.com/75nxNZM.png",
+  "website": "",
+  "patreonURL": "",
+  "tintColor": "#6156e2",
+  "featuredApps": [
+  ],
+  "apps": [
+    {
+      "name": "Nyxian",
+      "bundleIdentifier": "com.cr4zy.nyxian",
+      "marketplaceID": "",
+      "developerName": "Project Nyxian",
+      "subtitle": "",
+      "localizedDescription": "Nyxian is a iOS application for iOS 16.0 and above(iOS 26 latest beta tested) that empowers iOS users to code, compile, link, sign and even execute/rapid test iOS applications directly on their device! It is the successor of the former FridaCodeManager project, which was deprecated in favor of Nyxian, because FridaCodeManager requires a jailbreak to work while Nyxian does not.",
+      "iconURL": "https://i.imgur.com/Tn60ziY.png",
+      "tintColor": "#aa80dc",
+      "category": "developer",
+      "screenshots": [
+      ],
+      "versions": [
+        {
+          "downloadURL": "https://github.com/ProjectNyxian/Nyxian/releases/download/20251118a/nyxian_20251118a.ipa",
+          "size": 154900000,
+          "version": "1.0",
+          "buildVersion": "20251118a",
+          "date": "2025-11-18T20:43:00+01:00",
+          "localizedDescription": null,
+          "minOSVersion": null
+        }
+      ],
+      "appPermissions": {
+        "entitlements": [
+        ],
+        "privacy": {
+          "NSFaceIDUsageDescription": "The guest app is requesting for this permission.",
+          "NSSystemExtensionUsageDescription": "The guest app is requesting for this permission.",
+          "NSNearbyInteractionUsageDescription": "The guest app is requesting for this permission.",
+          "NSContactsUsageDescription": "The guest app is requesting for this permission.",
+          "NSHealthShareUsageDescription": "The guest app is requesting for this permission.",
+          "NSPhotoLibraryUsageDescription": "The guest app is requesting for this permission.",
+          "NSSiriUsageDescription": "The guest app is requesting for this permission.",
+          "NSRemovableVolumesUsageDescription": "The guest app is requesting for this permission.",
+          "NSSpeechRecognitionUsageDescription": "The guest app is requesting for this permission.",
+          "NSSensorKitUsageDescription": "The guest app is requesting for this permission.",
+          "NSNetworkVolumesUsageDescription": "The guest app is requesting for this permission.",
+          "NSFileProviderPresenceUsageDescription": "The guest app is requesting for this permission.",
+          "NSIdentityUsageDescription": "The guest app is requesting for this permission.",
+          "NSDesktopFolderUsageDescription": "The guest app is requesting for this permission.",
+          "NSBluetoothWhileInUseUsageDescription": "The guest app is requesting for this permission.",
+          "NSUserTrackingUsageDescription": "The guest app is requesting for this permission.",
+          "NSAppleEventsUsageDescription": "The guest app is requesting for this permission.",
+          "NSRemindersUsageDescription": "The guest app is requesting for this permission.",
+          "NSVoIPUsageDescription": "The guest app is requesting for this permission.",
+          "NSFallDetectionUsageDescription": "The guest app is requesting for this permission.",
+          "NSBluetoothAlwaysUsageDescription": "The guest app is requesting for this permission.",
+          "NSSystemAdministrationUsageDescription": "The guest app is requesting for this permission.",
+          "NSHealthUpdateUsageDescription": "The guest app is requesting for this permission.",
+          "NSLocationAlwaysAndWhenInUseUsageDescription": "The guest app is requesting for this permission.",
+          "NSPhotoLibraryAddUsageDescription": "The guest app is requesting for this permission.",
+          "NSCameraUsageDescription": "The guest app is requesting for this permission.",
+          "NSMicrophoneUsageDescription": "The guest app is requesting for this permission.",
+          "NSLocationUsageDescription": "The guest app is requesting for this permission.",
+          "NSGKFriendListUsageDescription": "The guest app is requesting for this permission.",
+          "NSAppleMusicUsageDescription": "The guest app is requesting for this permission.",
+          "NSMotionUsageDescription": "The guest app is requesting for this permission.",
+          "NSNearbyInteractionAllowOnceUsageDescription": "The guest app is requesting for this permission.",
+          "NSVideoSubscriberAccountUsageDescription": "The guest app is requesting for this permission.",
+          "NSBluetoothPeripheralUsageDescription": "The guest app is requesting for this permission.",
+          "NSCalendarsUsageDescription": "The guest app is requesting for this permission.",
+          "NSFocusStatusUsageDescription": "The guest app is requesting for this permission.",
+          "NSHomeKitUsageDescription": "The guest app is requesting for this permission.",
+          "NSLocationAlwaysUsageDescription": "The guest app is requesting for this permission.",
+          "NSLocalNetworkUsageDescription": "The guest app is requesting for this permission.",
+          "NSDownloadsFolderUsageDescription": "The guest app is requesting for this permission.",
+          "NSDocumentsFolderUsageDescription": "The guest app is requesting for this permission.",
+          "NSLocationWhenInUseUsageDescription": "The guest app is requesting for this permission.",
+          "NSSensorKitPrivacyPolicyURL": "The guest app is requesting for this permission.",
+          "NSFileProviderDomainUsageDescription": "The guest app is requesting for this permission.",
+          "NSHealthClinicalHealthRecordsShareUsageDescription": "The guest app is requesting for this permission."
+        }
+      },
+      "patreon": {
+      }
+    }
+  ],
+}
