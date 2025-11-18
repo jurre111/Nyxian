@@ -1,0 +1,54 @@
+name: Update Nyxian AltStore JSON
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"  # elke 10 minuten
+  workflow_dispatch:
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Get latest Nyxian release
+      id: nyx
+      run: |
+        # Download latest release metadata
+        curl -s https://api.github.com/repos/ProjectNyxian/Nyxian/releases/latest > release.json
+        TAG=$(jq -r '.tag_name' release.json)
+        DATE=$(jq -r '.published_at' release.json)
+        URL=$(jq -r '.assets[] | select(.name | endswith(".ipa")) | .browser_download_url' release.json)
+        SIZE=$(curl -sI "$URL" | grep -i Content-Length | awk '{print $2}' | tr -d '\r')
+
+        echo "TAG=$TAG" >> $GITHUB_ENV
+        echo "DATE=$DATE" >> $GITHUB_ENV
+        echo "URL=$URL" >> $GITHUB_ENV
+        echo "SIZE=$SIZE" >> $GITHUB_ENV
+
+    - name: Update AltStore JSON
+      run: |
+        FILE=altstore.json
+
+        # Controleer of versie al bestaat
+        if jq -e ".apps[0].versions[] | select(.buildVersion==\"${TAG}\")" "$FILE" > /dev/null; then
+          echo "Version ${TAG} already exists"
+        else
+          echo "Adding new version ${TAG}"
+          jq ".apps[0].versions += [{
+            \"downloadURL\": \"${URL}\",
+            \"size\": ${SIZE},
+            \"version\": \"1.0\",
+            \"buildVersion\": \"${TAG}\",
+            \"date\": \"${DATE}\",
+            \"localizedDescription\": null,
+            \"minOSVersion\": null
+          }]" "$FILE" > tmp.$$.json && mv tmp.$$.json "$FILE"
+        fi
+
+    - name: Commit changes
+      uses: stefanzweifel/git-auto-commit-action@v4
+      with:
+        commit_message: "Update Nyxian AltStore JSON for release ${{ env.TAG }}"
+        commit_user_name: "GitHub Action"
