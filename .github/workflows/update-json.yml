@@ -41,7 +41,7 @@ jobs:
 
     - name: Update AltStore JSON
       run: |
-        FILE=altstore.json
+        FILE=source.json
 
         # Controleer of deze downloadURL al bestaat
         if jq -e ".apps[0].versions[] | select(.downloadURL==\"${URL}\")" "$FILE" > /dev/null; then
