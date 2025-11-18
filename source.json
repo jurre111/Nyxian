@@ -79,8 +79,6 @@
           "NSFileProviderDomainUsageDescription": "The guest app is requesting for this permission.",
           "NSHealthClinicalHealthRecordsShareUsageDescription": "The guest app is requesting for this permission."
         }
-      },
-      "patreon": {
       }
     }
   ],
