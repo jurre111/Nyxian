@@ -2,7 +2,7 @@ name: Update Nyxian AltStore JSON
 
 on:
   schedule:
-    - cron: "*/10 * * * *"  # elke 10 minuten
+    - cron: "*/10 * * * *"  # every 10 minutes
   workflow_dispatch:
 
 jobs:
@@ -24,18 +24,20 @@ jobs:
                 TAG=$(echo "$RELEASES_JSON" | jq -r ".[$i].tag_name")
                 DATE=$(echo "$RELEASES_JSON" | jq -r ".[$i].published_at")
                 BODY=$(echo "$RELEASES_JSON" | jq -r ".[$i].body" | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')
-                SIZE=$(curl -sI "$URL" | grep -i Content-Length | awk '{print $2}' | tr -d '\r')
 
-                echo "Found release $TAG at $URL"
+                # Get file size reliably
+                SIZE=$(curl -sL -I "$URL" | grep -i Content-Length | tail -n1 | awk '{print $2}' | tr -d '\r')
 
-                # Exporteer variabelen
+                echo "Found release $TAG at $URL with size $SIZE"
+
+                # Export variables
                 echo "URL=$URL" >> $GITHUB_ENV
                 echo "DATE=$DATE" >> $GITHUB_ENV
                 echo "SIZE=$SIZE" >> $GITHUB_ENV
                 echo "BODY=$BODY" >> $GITHUB_ENV
                 echo "TAG=$TAG" >> $GITHUB_ENV
 
-                break  # gebruik de eerste gevonden release met IPA
+                break  # use the first found release with IPA
             fi
         done
 
@@ -43,7 +45,6 @@ jobs:
       run: |
         FILE=source.json
 
-        # Controleer of deze downloadURL al bestaat
         if jq -e ".apps[0].versions[] | select(.downloadURL==\"${URL}\")" "$FILE" > /dev/null; then
           echo "Version with URL ${URL} already exists"
         else
@@ -52,7 +53,6 @@ jobs:
             \"downloadURL\": \"${URL}\",
             \"size\": ${SIZE},
             \"version\": \"1.0\",
-            \"buildVersion\": \"${TAG}\",
             \"date\": \"${DATE}\",
             \"localizedDescription\": \"${BODY}\",
             \"minOSVersion\": null
