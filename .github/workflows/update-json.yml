@@ -21,17 +21,18 @@ jobs:
         DATE=$(jq -r '.published_at' release.json)
         URL=$(jq -r '.assets[] | select(.name | endswith(".ipa")) | .browser_download_url' release.json)
         SIZE=$(curl -sI "$URL" | grep -i Content-Length | awk '{print $2}' | tr -d '\r')
-
+        BODY=$(jq -r '.body' release.json | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')
+    
         echo "TAG=$TAG" >> $GITHUB_ENV
         echo "DATE=$DATE" >> $GITHUB_ENV
         echo "URL=$URL" >> $GITHUB_ENV
         echo "SIZE=$SIZE" >> $GITHUB_ENV
-
+        echo "BODY=$BODY" >> $GITHUB_ENV
+    
     - name: Update AltStore JSON
       run: |
         FILE=altstore.json
-
-        # Controleer of versie al bestaat
+    
         if jq -e ".apps[0].versions[] | select(.buildVersion==\"${TAG}\")" "$FILE" > /dev/null; then
           echo "Version ${TAG} already exists"
         else
@@ -42,10 +43,11 @@ jobs:
             \"version\": \"1.0\",
             \"buildVersion\": \"${TAG}\",
             \"date\": \"${DATE}\",
-            \"localizedDescription\": null,
+            \"localizedDescription\": \"${BODY}\",
             \"minOSVersion\": null
           }]" "$FILE" > tmp.$$.json && mv tmp.$$.json "$FILE"
         fi
+
 
     - name: Commit changes
       uses: stefanzweifel/git-auto-commit-action@v4
