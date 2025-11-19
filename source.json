@@ -20,14 +20,6 @@
       "screenshots": [],
       "versions": [
         {
-          "downloadURL": "https://github.com/ProjectNyxian/Nyxian/releases/download/20251118a/nyxian_20251118a.ipa/",
-          "size": 154910767,
-          "version": "1.1",
-          "date": "2025-11-19T8:55:44Z",
-          "localizedDescription": "### CAUTION\r\nOnly use this build on iPad, the iPhone version of the window server v3 is not done yet.\r\nUtility development is also broken currently.\r\nExpect the more stable builds to come in the next 3 days.\r\n\r\n### Changelog\r\n- Introducing a very early version of window server v3 (Introducing much easier navigation).\r\n- Bringing back the bring window associated with project to front feature.\r\n- Adding a brand new entitlement enforcement system, with more fine grain control over what process can and cannot do.\r\n- Process spawning is now synchronized with the ksurface process table to reduce further attack surface.",
-          "minOSVersion": null
-        },
-        {
           "downloadURL": "https://github.com/ProjectNyxian/Nyxian/releases/download/20251118a/nyxian_20251118a.ipa",
           "size": 154910767,
           "version": "1.0",
