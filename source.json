@@ -4,7 +4,9 @@
   "description": "Here you will find the latest weekly build of Nyxian",
   "iconURL": "https://i.imgur.com/75nxNZM.png",
   "tintColor": "#6156e2",
-  "featuredApps": [],
+  "featuredApps": [
+    "com.cr4zy.nyxian"
+  ],
   "apps": [
     {
       "name": "Nyxian",
