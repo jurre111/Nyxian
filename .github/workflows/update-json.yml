@@ -106,7 +106,7 @@ jobs:
 
         # 3. Unzip and modify plist
         unzip Nyxian_temp.ipa -d Nyxian_extracted
-        VERSION=$(grep "buildVersion" AppInfo.swift | sed -E 's/.*buildVersion: Double = ([0-9.]+).*/\1/')
+        VERSION=$(sed -nE 's/.*buildVersion: Double = ([0-9.]+).*/\1/p' AppInfo.swift)
         APP_PATH=$(find Nyxian_extracted/Payload -name "*.app" -maxdepth 1)
         PLIST_PATH="${APP_PATH}/Info.plist"
 
