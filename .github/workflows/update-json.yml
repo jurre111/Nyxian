@@ -121,7 +121,7 @@ jobs:
         FILE=source.json
 
         # Check if the version already exists using the download URL
-        URL="https://jurre111.github.io/Nyxian/Resources/App/Nyxian.ipa" 
+        URL="https://github.com/jurre111/Nyxian/raw/refs/heads/main/Resources/App/Nyxian.ipa" 
         TAG="${{ env.TAG }}"
         VERSION="${{ env.VERSION }}"
         SIZE="${{ env.SIZE }}" # Now using the correct size in bytes
