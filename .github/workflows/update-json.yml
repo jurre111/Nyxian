@@ -2,7 +2,7 @@ name: Update Nyxian AltStore JSON
 
 on:
   schedule:
-    - cron: "*/35 * * * *"  # every 10 minutes
+    - cron: "*/35 * * * *"  # every 35 minutes
   workflow_dispatch:
 
 jobs:
@@ -16,28 +16,40 @@ jobs:
       id: nyx
       run: |
         echo "Fetching all releases..."
-        RELEASES_JSON=$(curl -s https://api.github.com/repos/ProjectNyxian/Nyxian/releases)
+        # Note: Using an authenticated request (via GITHUB_TOKEN) is better for rate limits
+        RELEASES_JSON=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" https://api.github.com/repos/ProjectNyxian/Nyxian/releases)
+
+        # Check if the fetch was successful
+        if [ "$(echo "$RELEASES_JSON" | jq 'type')" != '"array"' ]; then
+          echo "Error fetching releases or no releases found."
+          exit 1
+        fi
 
         for i in $(seq 0 $(($(echo "$RELEASES_JSON" | jq 'length') - 1))); do
+            # Filter assets to find the first one ending in ".ipa"
             URL=$(echo "$RELEASES_JSON" | jq -r ".[$i].assets[]? | select(.name | endswith(\".ipa\")) | .browser_download_url")
+            
             if [ -n "$URL" ]; then
                 TAG=$(echo "$RELEASES_JSON" | jq -r ".[$i].tag_name")
                 DATE=$(echo "$RELEASES_JSON" | jq -r ".[$i].published_at")
+                
+                # Format the release body: escape newlines (\\n) and double quotes (\\") for safe JSON insertion
                 BODY=$(echo "$RELEASES_JSON" | jq -r ".[$i].body" | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')
 
-                # Get file size reliably
+                # Get file size reliably (using curl head request)
+                # Following redirects (-L) and checking Content-Length
                 SIZE=$(curl -sL -I "$URL" | grep -i Content-Length | tail -n1 | awk '{print $2}' | tr -d '\r')
 
                 echo "Found release $TAG at $URL with size $SIZE"
 
-                # Export variables
+                # Export variables to be used in subsequent steps
                 echo "URL=$URL" >> $GITHUB_ENV
                 echo "DATE=$DATE" >> $GITHUB_ENV
                 echo "SIZE=$SIZE" >> $GITHUB_ENV
                 echo "BODY=$BODY" >> $GITHUB_ENV
                 echo "TAG=$TAG" >> $GITHUB_ENV
 
-                break  # use the first found release with IPA
+                break  # use the first found release with IPA (which should be the latest)
             fi
         done
 
@@ -45,18 +57,36 @@ jobs:
       run: |
         FILE=source.json
 
+        # Check if the version already exists using the download URL
+        # URL needs to be escaped for use inside the jq selection string.
+        # However, since the variable is defined using $GITHUB_ENV, we need to read it back.
+        URL="${{ env.URL }}"
+        TAG="${{ env.TAG }}"
+        SIZE="${{ env.SIZE }}"
+        DATE="${{ env.DATE }}"
+        BODY="${{ env.BODY }}"
+
+        if [ -z "$URL" ]; then
+          echo "No IPA release URL found. Skipping update."
+          exit 0
+        fi
+
         if jq -e ".apps[0].versions[] | select(.downloadURL==\"${URL}\")" "$FILE" > /dev/null; then
-          echo "Version with URL ${URL} already exists"
+          echo "Version with URL ${URL} already exists. No changes needed."
         else
-          echo "Adding new version ${TAG}"
-          jq ".apps[0].versions += [{
+          echo "Adding new version ${TAG} as the FIRST entry."
+          
+          # This is the critical change:
+          # We define the new version object in an array [{...}] 
+          # and PREPEND it to the existing versions array using the '+' operator.
+          jq ".apps[0].versions = [{
             \"downloadURL\": \"${URL}\",
             \"size\": ${SIZE},
-            \"version\": \"1.0\",
+            \"version\": \"1.0\", # Consider setting this from the TAG if possible
             \"date\": \"${DATE}\",
             \"localizedDescription\": \"${BODY}\",
             \"minOSVersion\": null
-          }]" "$FILE" > tmp.$$.json && mv tmp.$$.json "$FILE"
+          }] + .apps[0].versions" "$FILE" > tmp.$$.json && mv tmp.$$.json "$FILE"
         fi
 
     - name: Commit changes
@@ -64,3 +94,5 @@ jobs:
       with:
         commit_message: "Update Nyxian AltStore JSON for release ${{ env.TAG }}"
         commit_user_name: "GitHub Action"
+        # Optional: Add commit_author to clearly mark the automated commit
+        # commit_author: 'github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>'
