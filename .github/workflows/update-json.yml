@@ -2,17 +2,73 @@ name: Update Nyxian AltStore JSON
 
 on:
   schedule:
-    - cron: "*/35 * * * *"
+    - cron: "*/35 * * * *"  # every 35 minutes
   workflow_dispatch:
 
 jobs:
+  check_release:
+    runs-on: ubuntu-latest
+    outputs:
+      new_version: ${{ steps.check.outputs.new_version }}
+      tag: ${{ steps.check.outputs.tag }}
+      date: ${{ steps.check.outputs.date }}
+      body: ${{ steps.check.outputs.body }}
+      url: ${{ steps.check.outputs.url }}
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Fetch Releases
+      id: releases
+      run: |
+        RELEASES=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" https://api.github.com/repos/ProjectNyxian/Nyxian/releases)
+        echo "data<<EOF" >> $GITHUB_OUTPUT
+        echo "$RELEASES" >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+
+    - name: Check Latest Release
+      id: check
+      run: |
+        RELEASES_JSON="${{ steps.releases.outputs.data }}"
+        
+        # Extract first IPA release
+        URL=$(echo "$RELEASES_JSON" | jq -r '.[] | .assets[]? | select(.name | endswith(".ipa")) | .browser_download_url' | head -n 1)
+        TAG=$(echo "$RELEASES_JSON" | jq -r '.[0].tag_name')
+        DATE=$(echo "$RELEASES_JSON" | jq -r '.[0].published_at')
+        BODY=$(echo "$RELEASES_JSON" | jq -r '.[0].body' | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')
+
+        if [ -z "$URL" ]; then
+          echo "No IPA release found."
+          echo "new_version=false" >> $GITHUB_OUTPUT
+          exit 0
+        fi
+
+        echo "Latest release tag: $TAG"
+
+        # Check if TAG already exists in JSON
+        if jq -e ".apps[0].versions[] | select(.buildVersion==\"${TAG}\")" source.json > /dev/null; then
+          echo "Version already exists. No update needed."
+          echo "new_version=false" >> $GITHUB_OUTPUT
+        else
+          echo "New version detected!"
+          echo "new_version=true" >> $GITHUB_OUTPUT
+        fi
+
+        echo "tag=$TAG" >> $GITHUB_OUTPUT
+        echo "date=$DATE" >> $GITHUB_OUTPUT
+        echo "body=$BODY" >> $GITHUB_OUTPUT
+        echo "url=$URL" >> $GITHUB_OUTPUT
+
+
   update:
     runs-on: ubuntu-latest
+    needs: check_release
+    if: needs.check_release.outputs.new_version == 'true'
 
     steps:
     - uses: actions/checkout@v3
       with:
-        lfs: true 
+        lfs: true
 
     - name: Configure Git LFS
       run: |
@@ -21,58 +77,23 @@ jobs:
         git lfs install
         git lfs track "Resources/App/*.ipa"
 
-    - name: Get all Nyxian releases
-      id: nyx
-      run: |
-        echo "Fetching releases..."
-        RELEASES_JSON=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" https://api.github.com/repos/ProjectNyxian/Nyxian/releases)
-
-        if [ "$(echo "$RELEASES_JSON" | jq 'type')" != '"array"' ]; then
-          echo "Error fetching releases."
-          exit 1
-        fi
-
-        for i in $(seq 0 $(($(echo "$RELEASES_JSON" | jq 'length') - 1))); do
-            URL=$(echo "$RELEASES_JSON" | jq -r ".[$i].assets[]? | select(.name | endswith(\".ipa\")) | .browser_download_url")
-            if [ -n "$URL" ]; then
-                TAG=$(echo "$RELEASES_JSON" | jq -r ".[$i].tag_name")
-                DATE=$(echo "$RELEASES_JSON" | jq -r ".[$i].published_at")
-                BODY=$(echo "$RELEASES_JSON" | jq -r ".[$i].body" | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')
-
-                echo "URL=$URL" >> $GITHUB_ENV
-                echo "DATE=$DATE" >> $GITHUB_ENV
-                echo "BODY=$BODY" >> $GITHUB_ENV
-                echo "TAG=$TAG" >> $GITHUB_ENV
-                break
-            fi
-        done
-
-    # -------------------------------
-    # NEW: EARLY EXIT IF VERSION EXISTS
-    # -------------------------------
-    - name: Check if version already exists
-      run: |
-        FILE=source.json
-        TAG="${{ env.TAG }}"
-
-        if jq -e ".apps[0].versions[] | select(.buildVersion == \"${TAG}\")" "$FILE" > /dev/null; then
-          echo "Version ${TAG} already exists. Exiting workflow."
-          exit 0
-        fi
-
-    # Only continues if new version exists
     - name: Modify App Package
       run: |
         sudo apt-get update && sudo apt-get install -y libplist-utils
-        wget "${{ env.URL }}" -O Nyxian_temp.ipa
-        wget https://raw.githubusercontent.com/ProjectNyxian/Nyxian/refs/heads/main/Nyxian/UI/Settings/AppInfo.swift -O AppInfo.swift
 
+        URL="${{ needs.check_release.outputs.url }}"
+        TAG="${{ needs.check_release.outputs.tag }}"
+
+        wget "$URL" -O Nyxian_temp.ipa
+        wget https://raw.githubusercontent.com/ProjectNyxian/Nyxian/refs/heads/main/Nyxian/UI/Settings/AppInfo.swift -O AppInfo.swift
+        
         unzip Nyxian_temp.ipa -d Nyxian_extracted
+        
         VERSION=$(grep "buildVersion" AppInfo.swift | sed -E 's/.*buildVersion: Double = ([0-9.]+).*/\1/')
         APP_PATH=$(find Nyxian_extracted/Payload -name "*.app" -maxdepth 1)
         PLIST_PATH="${APP_PATH}/Info.plist"
 
-        plistutil -replace CFBundleVersion -string "${{ env.TAG }}" "${PLIST_PATH}"
+        plistutil -replace CFBundleVersion -string "${TAG}" "${PLIST_PATH}"
         plistutil -replace CFBundleShortVersionString -string "${VERSION}" "${PLIST_PATH}"
 
         zip -r Nyxian_modified.ipa Nyxian_extracted/Payload
@@ -81,23 +102,28 @@ jobs:
         cp Nyxian_modified.ipa Resources/App/Nyxian.ipa
 
         SIZE=$(stat -c%s Resources/App/Nyxian.ipa)
+
         echo "VERSION=$VERSION" >> $GITHUB_ENV
         echo "SIZE=$SIZE" >> $GITHUB_ENV
 
     - name: Cleanup Temporary Artifacts
       run: |
         rm -rf Nyxian_extracted
-        rm -f Nyxian_temp.ipa Nyxian_modified.ipa AppInfo.swift
+        rm -f Nyxian_temp.ipa Nyxian_modified.ipa
+        rm -f AppInfo.swift
 
     - name: Update AltStore JSON
       run: |
         FILE=source.json
+
         URL="https://github.com/jurre111/Nyxian/raw/refs/heads/main/Resources/App/Nyxian.ipa"
-        TAG="${{ env.TAG }}"
+        TAG="${{ needs.check_release.outputs.tag }}"
         VERSION="${{ env.VERSION }}"
         SIZE="${{ env.SIZE }}"
-        DATE="${{ env.DATE }}"
-        BODY="${{ env.BODY }}"
+        DATE="${{ needs.check_release.outputs.date }}"
+        BODY="${{ needs.check_release.outputs.body }}"
+
+        echo "Adding new version $TAG"
 
         jq ".apps[0].versions = [{
           \"downloadURL\": \"${URL}\",
@@ -107,10 +133,10 @@ jobs:
           \"date\": \"${DATE}\",
           \"localizedDescription\": \"${BODY}\",
           \"minOSVersion\": null
-        }] + .apps[0].versions" "$FILE" > tmp.$$.json && mv tmp.$$.json "$FILE"
+        }] + .apps[0].versions" "$FILE" > tmp.json && mv tmp.json "$FILE"
 
     - name: Commit changes
       uses: stefanzweifel/git-auto-commit-action@v4
       with:
-        commit_message: "Update Nyxian AltStore JSON and IPA for release ${{ env.TAG }}"
+        commit_message: "Update Nyxian AltStore JSON and IPA for release ${{ needs.check_release.outputs.tag }}"
         commit_user_name: "GitHub Action"
