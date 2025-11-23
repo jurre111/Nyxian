@@ -58,13 +58,13 @@ jobs:
         sudo apt-get update && sudo apt-get install -y libplist-utils
         
         # 1. Download original IPA
-        wget "${{ env.URL }}" -O Nyxian.ipa
+        wget "${{ env.URL }}" -O Nyxian_original.ipa
         
         # 2. Download source file
         wget https://raw.githubusercontent.com/ProjectNyxian/Nyxian/refs/heads/main/Nyxian/UI/Settings/AppInfo.swift -O AppInfo.swift
 
         # 3. Unzip and modify plist
-        unzip Nyxian.ipa -d Nyxian
+        unzip Nyxian_original.ipa -d Nyxian
         VERSION=$(grep "buildVersion" AppInfo.swift | sed -E 's/.*buildVersion: Double = ([0-9.]+).*/\1/')
         APP_PATH=$(find Nyxian/Payload -name "*.app" -maxdepth 1)
         PLIST_PATH="${APP_PATH}/Info.plist"
@@ -75,23 +75,31 @@ jobs:
         # 4. Re-package the modified IPA using a temporary name
         zip -r Nyxian_modified.ipa Nyxian/*
 
-        # 5. CRITICAL FIX: Copy the newly created, modified IPA over the original file
-        # This marks Nyxian.ipa as "changed" in the repository root.
-        cp Nyxian_modified.ipa Nyxian.ipa
-
-        # 6. FIX: Calculate size of the final, committed file (in bytes)
-        SIZE=$(stat -c%s Nyxian.ipa)
+        # --- CRITICAL FIXES FOR FILE PLACEMENT AND SIZE ---
         
-        # 7. Export variables
+        # 5. Create the target directory structure
+        # The -p flag means it won't error if the directories already exist.
+        mkdir -p Resources/App
+        
+        # 6. Copy the modified IPA to the final destination
+        # This replaces the old file or creates the new one in the correct path.
+        cp Nyxian_modified.ipa Resources/App/Nyxian.ipa
+
+        # 7. FIX: Calculate size of the final, committed file (in bytes)
+        SIZE=$(stat -c%s Resources/App/Nyxian.ipa)
+        
+        # 8. Export variables
         echo "VERSION=$VERSION" >> $GITHUB_ENV
         echo "SIZE=$SIZE" >> $GITHUB_ENV
+        # --- END CRITICAL FIXES ---
 
     - name: Update AltStore JSON
       run: |
         FILE=source.json
 
         # Check if the version already exists using the download URL
-        URL="https://jurre111.github.io/Nyxian/Nyxian.ipa" # Fixed URL
+        # FIX: URL now points to the file inside Resources/App/
+        URL="https://jurre111.github.io/Nyxian/Resources/App/Nyxian.ipa" 
         TAG="${{ env.TAG }}"
         VERSION="${{ env.VERSION }}"
         SIZE="${{ env.SIZE }}" # Now using the correct size in bytes
