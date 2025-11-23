@@ -141,8 +141,6 @@ jobs:
         rm -f Nyxian_temp.ipa Nyxian_modified.ipa
         # Remove the downloaded Swift file
         rm -f AppInfo.swift
-
-
     - name: Update AltStore JSON
       run: |
         FILE=source.json
@@ -168,7 +166,11 @@ jobs:
           \"localizedDescription\": \"${BODY}\",
           \"minOSVersion\": null
         }] + .apps[0].versions" "$FILE" > tmp.$$.json && mv tmp.$$.json "$FILE"
-
+    - name: Upload a Build Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: Nyxian-IPA
+        path: Resources/App/Nyxian.ipa
     - name: Commit changes
       uses: stefanzweifel/git-auto-commit-action@v4
       with:
