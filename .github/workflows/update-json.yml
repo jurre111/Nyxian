@@ -29,7 +29,17 @@ jobs:
     - name: Check Latest Release
       id: check
       run: |
-        RELEASES_JSON="${{ steps.releases.outputs.data }}"
+        RELEASES_JSON=$(cat <<'EOF'
+        [
+          {
+            "url": "https://api.github.com/repos/ProjectNyxian/Nyxian/releases/264519569",
+            "assets_url": "https://api.github.com/repos/ProjectNyxian/Nyxian/releases/264519569/assets",
+            ...
+          }
+        ]
+        EOF
+        )
+
         
         # Extract first IPA release
         URL=$(echo "$RELEASES_JSON" | jq -r '.[] | .assets[]? | select(.name | endswith(".ipa")) | .browser_download_url' | head -n 1)
