@@ -65,7 +65,7 @@ jobs:
         fi
 
   update:
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     needs: check_version
     if: ${{ needs.check_version.outputs.skip_update == 'false' }}
     env:
@@ -81,10 +81,8 @@ jobs:
 
     - name: Install and Configure Dependenies
       run: |
-        # Install git-lfs on the Ubuntu runner
-        sudo apt-get update
-        sudo apt-get install -y git-lfs
-        sudo apt-get install -y libplist-utils
+        # Install git-lfs on the MacOS runner
+        brew install git-lfs
 
         # Initialize LFS in the repository
         git lfs install
@@ -112,8 +110,8 @@ jobs:
         APP_PATH=$(find Nyxian_extracted/Payload -name "*.app" -maxdepth 1)
         PLIST_PATH="${APP_PATH}/Info.plist"
 
-        plistutil -replace CFBundleVersion -string "${{ env.TAG }}" "${PLIST_PATH}"
-        plistutil -replace CFBundleShortVersionString -string "${VERSION}" "${PLIST_PATH}"
+        /usr/bin/defaults write "${PLIST_PATH}" CFBundleVersion -string "${{ env.TAG }}"
+        /usr/bin/defaults write "${PLIST_PATH}" CFBundleShortVersionString -string "${VERSION}" 
         
         # 4. Re-package the modified IPA using a temporary name
         cd Nyxian_extracted
@@ -127,7 +125,7 @@ jobs:
         cp Nyxian_modified.ipa Resources/App/Nyxian.ipa
 
         # 7. Calculate size of the final, committed file (in bytes)
-        SIZE=$(stat -c%s Resources/App/Nyxian.ipa)
+        SIZE=$(stat -f%z Resources/App/Nyxian.ipa)
         
         # 8. Export variables
         echo "VERSION=$VERSION" >> $GITHUB_ENV
