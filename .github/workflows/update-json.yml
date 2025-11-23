@@ -36,16 +36,11 @@ jobs:
                 # Format the release body: escape newlines (\\n) and double quotes (\\") for safe JSON insertion
                 BODY=$(echo "$RELEASES_JSON" | jq -r ".[$i].body" | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')
 
-                # Get file size reliably (using curl head request)
-                # Following redirects (-L) and checking Content-Length
-                SIZE=$(curl -sL -I "$URL" | grep -i Content-Length | tail -n1 | awk '{print $2}' | tr -d '\r')
-
-                echo "Found release $TAG at $URL with size $SIZE"
+                echo "Found release $TAG at $URL"
 
                 # Export variables to be used in subsequent steps
                 echo "URL=$URL" >> $GITHUB_ENV
                 echo "DATE=$DATE" >> $GITHUB_ENV
-                echo "SIZE=$SIZE" >> $GITHUB_ENV
                 echo "BODY=$BODY" >> $GITHUB_ENV
                 echo "TAG=$TAG" >> $GITHUB_ENV
 
@@ -53,16 +48,53 @@ jobs:
             fi
         done
 
+    - name: Modify App Package
+      run: |
+        if [ -z "${{ env.URL }}" ]; then
+          echo "No IPA URL found. Skipping IPA modification."
+          exit 0
+        fi
+
+        sudo apt-get update && sudo apt-get install -y libplist-utils
+        
+        # 1. Download original IPA
+        wget "${{ env.URL }}" -O Nyxian.ipa
+        
+        # 2. Download source file
+        wget https://raw.githubusercontent.com/ProjectNyxian/Nyxian/refs/heads/main/Nyxian/UI/Settings/AppInfo.swift -O AppInfo.swift
+
+        # 3. Unzip and modify plist
+        unzip Nyxian.ipa -d Nyxian
+        VERSION=$(grep "buildVersion" AppInfo.swift | sed -E 's/.*buildVersion: Double = ([0-9.]+).*/\1/')
+        APP_PATH=$(find Nyxian/Payload -name "*.app" -maxdepth 1)
+        PLIST_PATH="${APP_PATH}/Info.plist"
+
+        plistutil -replace CFBundleVersion -string "${{ env.TAG }}" "${PLIST_PATH}"
+        plistutil -replace CFBundleShortVersionString -string "${VERSION}" "${PLIST_PATH}"
+        
+        # 4. Re-package the modified IPA using a temporary name
+        zip -r Nyxian_modified.ipa Nyxian/*
+
+        # 5. CRITICAL FIX: Copy the newly created, modified IPA over the original file
+        # This marks Nyxian.ipa as "changed" in the repository root.
+        cp Nyxian_modified.ipa Nyxian.ipa
+
+        # 6. FIX: Calculate size of the final, committed file (in bytes)
+        SIZE=$(stat -c%s Nyxian.ipa)
+        
+        # 7. Export variables
+        echo "VERSION=$VERSION" >> $GITHUB_ENV
+        echo "SIZE=$SIZE" >> $GITHUB_ENV
+
     - name: Update AltStore JSON
       run: |
         FILE=source.json
 
         # Check if the version already exists using the download URL
-        # URL needs to be escaped for use inside the jq selection string.
-        # However, since the variable is defined using $GITHUB_ENV, we need to read it back.
-        URL="${{ env.URL }}"
+        URL="https://jurre111.github.io/Nyxian/Nyxian.ipa" # Fixed URL
         TAG="${{ env.TAG }}"
-        SIZE="${{ env.SIZE }}"
+        VERSION="${{ env.VERSION }}"
+        SIZE="${{ env.SIZE }}" # Now using the correct size in bytes
         DATE="${{ env.DATE }}"
         BODY="${{ env.BODY }}"
 
@@ -71,8 +103,8 @@ jobs:
           exit 0
         fi
 
-        if jq -e ".apps[0].versions[] | select(.downloadURL==\"${URL}\")" "$FILE" > /dev/null; then
-          echo "Version with URL ${URL} already exists. No changes needed."
+        if jq -e ".apps[0].versions[] | select(.buildVersion==\"${TAG}\")" "$FILE" > /dev/null; then
+          echo "Version with buildVersion ${TAG} already exists. No changes needed."
         else
           echo "Adding new version ${TAG} as the FIRST entry."
           
@@ -82,7 +114,8 @@ jobs:
           jq ".apps[0].versions = [{
             \"downloadURL\": \"${URL}\",
             \"size\": ${SIZE},
-            \"version\": \"1.0\", # Consider setting this from the TAG if possible
+            \"version\": \"${VERSION}\",
+            \"buildVersion\": \"${TAG}\",
             \"date\": \"${DATE}\",
             \"localizedDescription\": \"${BODY}\",
             \"minOSVersion\": null
@@ -92,7 +125,6 @@ jobs:
     - name: Commit changes
       uses: stefanzweifel/git-auto-commit-action@v4
       with:
-        commit_message: "Update Nyxian AltStore JSON for release ${{ env.TAG }}"
+        # This action now commits both the modified source.json AND the modified Nyxian.ipa
+        commit_message: "Update Nyxian AltStore JSON and IPA for release ${{ env.TAG }}"
         commit_user_name: "GitHub Action"
-        # Optional: Add commit_author to clearly mark the automated commit
-        # commit_author: 'github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>'
