@@ -30,7 +30,7 @@
         {
           "downloadURL": "https://github.com/ProjectNyxian/Nyxian/releases/download/20251122a/nyxian_20251122a.ipa",
           "size": 155284293,
-          "version": "1.0",
+          "version": "20251122a",
           "date": "2025-11-22T10:06:39Z",
           "localizedDescription": "### Caution\r\niPad Only Build again\r\n\r\nThis build is mostly improvements. Improvements mandatory to push further.\r\n\r\n### Changelog\r\n- Rewrote window gestures to be intuitive\r\n- Improved window design.\r\n- Animated windows.\r\n- Fixed Utility development\r\n- Fixed Process tree recursive killing\r\n- Fixed vulnerability in seqlock\r\n- Fixed vulnerability in PEEntitlementSpawnSignedOnly handling\r\n- Fixed up ServerSession code.",
           "minOSVersion": null
