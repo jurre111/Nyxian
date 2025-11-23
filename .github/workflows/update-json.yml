@@ -6,141 +6,170 @@ on:
   workflow_dispatch:
 
 jobs:
-  fetch_release:
+  check_version:
     runs-on: ubuntu-latest
     outputs:
-      has_release: ${{ steps.check_release.outputs.has_release }}
-      tag: ${{ steps.check_release.outputs.tag }}
-      url: ${{ steps.check_release.outputs.url }}
-      body: ${{ steps.check_release.outputs.body }}
-      date: ${{ steps.check_release.outputs.date }}
+      skip_update: ${{ steps.nyx.outputs.skip_update }}
+      url: ${{ steps.nyx.outputs.URL }}
+      date: ${{ steps.nyx.outputs.DATE }}
+      body: ${{ steps.nyx.outputs.BODY }}
+      tag: ${{ steps.nyx.outputs.TAG }}
+
     steps:
     - uses: actions/checkout@v3
-      with:
-        lfs: true
-
-    - name: Configure Git LFS
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y git-lfs
-        git lfs install
-        git lfs track "Resources/App/*.ipa"
 
     - name: Get all Nyxian releases
       id: nyx
       run: |
+        FILE=source.json
+
         echo "Fetching all releases..."
+        # Note: Using an authenticated request (via GITHUB_TOKEN) is better for rate limits
         RELEASES_JSON=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" https://api.github.com/repos/ProjectNyxian/Nyxian/releases)
+
+        # Check if the fetch was successful
         if [ "$(echo "$RELEASES_JSON" | jq 'type')" != '"array"' ]; then
           echo "Error fetching releases or no releases found."
           exit 1
         fi
 
-        HAS_RELEASE="false"
         for i in $(seq 0 $(($(echo "$RELEASES_JSON" | jq 'length') - 1))); do
+            # Filter assets to find the first one ending in ".ipa"
             URL=$(echo "$RELEASES_JSON" | jq -r ".[$i].assets[]? | select(.name | endswith(\".ipa\")) | .browser_download_url")
+            
             if [ -n "$URL" ]; then
                 TAG=$(echo "$RELEASES_JSON" | jq -r ".[$i].tag_name")
                 DATE=$(echo "$RELEASES_JSON" | jq -r ".[$i].published_at")
+                
+                # Format the release body: escape newlines (\\n) and double quotes (\\") for safe JSON insertion
                 BODY=$(echo "$RELEASES_JSON" | jq -r ".[$i].body" | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')
 
                 echo "Found release $TAG at $URL"
 
-                HAS_RELEASE="true"
-                echo "::set-output name=has_release::$HAS_RELEASE"
-                echo "::set-output name=tag::$TAG"
-                echo "::set-output name=url::$URL"
-                echo "::set-output name=body::$BODY"
-                echo "::set-output name=date::$DATE"
-                break
+                # Export variables to be used in subsequent steps
+                echo "URL=$URL" >> $GITHUB_OUTPUT
+                echo "DATE=$DATE" >> $GITHUB_OUTPUT
+                echo "BODY=$BODY" >> $GITHUB_OUTPUT
+                echo "TAG=$TAG" >> $GITHUB_OUTPUT
+
+                break  # use the first found release with IPA (which should be the latest)
             fi
         done
 
-    - name: Check if release exists
-      id: check_release
-      run: |
-        if [ "${{ steps.nyx.outputs.has_release }}" = "true" ]; then
-          echo "New release detected"
-          echo "has_release=true" >> $GITHUB_OUTPUT
-          echo "tag=${{ steps.nyx.outputs.tag }}" >> $GITHUB_OUTPUT
-          echo "url=${{ steps.nyx.outputs.url }}" >> $GITHUB_OUTPUT
-          echo "body=${{ steps.nyx.outputs.body }}" >> $GITHUB_OUTPUT
-          echo "date=${{ steps.nyx.outputs.date }}" >> $GITHUB_OUTPUT
+        if jq -e ".apps[0].versions[] | select(.buildVersion==\"${TAG}\")" "$FILE" > /dev/null; then
+          echo "Version with buildVersion ${TAG} already exists. No changes needed."
+          echo "SKIP_UPDATE=true" >> $GITHUB_OUTPUT
         else
-          echo "No new release"
-          echo "has_release=false" >> $GITHUB_OUTPUT
-        fi
+          echo "Adding new version ${TAG} as the FIRST entry."
+          echo "SKIP_UPDATE=false" >> $GITHUB_OUTPUT
 
-  process_release:
+  update:
     runs-on: ubuntu-latest
-    needs: fetch_release
-    if: needs.fetch_release.outputs.has_release == 'true'
+    needs: check_version
+    if: ${{ needs.check_version.outputs.skip_update == 'false' }}
+    env:
+      URL: ${{ needs.check_version.outputs.url }}
+      DATE: ${{ needs.check_version.outputs.date }}
+      BODY: ${{ needs.check_version.outputs.body }}
+      TAG: ${{ needs.check_version.outputs.tag }}
+
     steps:
     - uses: actions/checkout@v3
       with:
-        lfs: true
+        lfs: true 
 
-    - name: Configure Git LFS
+    - name: Install and Configure Dependenies
       run: |
+        # Install git-lfs on the Ubuntu runner
         sudo apt-get update
         sudo apt-get install -y git-lfs
+        sudo apt-get install -y libplist-utils
+
+        # Initialize LFS in the repository
         git lfs install
+
+        # Tell Git to track the large IPA file in the Resources/App directory using LFS
+        # This creates or updates the .gitattributes file, which the auto-commit action will pick up.
         git lfs track "Resources/App/*.ipa"
 
     - name: Modify App Package
       run: |
-        sudo apt-get update && sudo apt-get install -y libplist-utils
+        if [ -z "${{ env.URL }}" ]; then
+          echo "No IPA URL found. Skipping IPA modification."
+          exit 0
+        fi
         
-        wget "${{ needs.fetch_release.outputs.url }}" -O Nyxian_temp.ipa
+        # 1. Download original IPA (using a unique temporary name)
+        wget "${{ env.URL }}" -O Nyxian_temp.ipa
+        
+        # 2. Download source file
         wget https://raw.githubusercontent.com/ProjectNyxian/Nyxian/refs/heads/main/Nyxian/UI/Settings/AppInfo.swift -O AppInfo.swift
 
+        # 3. Unzip and modify plist
         unzip Nyxian_temp.ipa -d Nyxian_extracted
         VERSION=$(grep "buildVersion" AppInfo.swift | sed -E 's/.*buildVersion: Double = ([0-9.]+).*/\1/')
         APP_PATH=$(find Nyxian_extracted/Payload -name "*.app" -maxdepth 1)
         PLIST_PATH="${APP_PATH}/Info.plist"
 
-        plistutil -replace CFBundleVersion -string "${{ needs.fetch_release.outputs.tag }}" "${PLIST_PATH}"
+        plistutil -replace CFBundleVersion -string "${{ env.TAG }}" "${PLIST_PATH}"
         plistutil -replace CFBundleShortVersionString -string "${VERSION}" "${PLIST_PATH}"
-
+        
+        # 4. Re-package the modified IPA using a temporary name
         zip -r Nyxian_modified.ipa Nyxian_extracted/Payload
+
+        # 5. Create the target directory structure
         mkdir -p Resources/App
+        
+        # 6. Copy the modified IPA to the final destination
         cp Nyxian_modified.ipa Resources/App/Nyxian.ipa
+
+        # 7. Calculate size of the final, committed file (in bytes)
         SIZE=$(stat -c%s Resources/App/Nyxian.ipa)
+        
+        # 8. Export variables
         echo "VERSION=$VERSION" >> $GITHUB_ENV
         echo "SIZE=$SIZE" >> $GITHUB_ENV
 
     - name: Cleanup Temporary Artifacts
       run: |
+        echo "Cleaning up large temporary files to prevent Git size violation..."
+        # Remove the unzipped folder (contains oversized files)
         rm -rf Nyxian_extracted
+        # Remove all temporary IPA files
         rm -f Nyxian_temp.ipa Nyxian_modified.ipa
+        # Remove the downloaded Swift file
         rm -f AppInfo.swift
+
 
     - name: Update AltStore JSON
       run: |
         FILE=source.json
-        URL="https://github.com/jurre111/Nyxian/raw/refs/heads/main/Resources/App/Nyxian.ipa" 
-        TAG="${{ needs.fetch_release.outputs.tag }}"
-        VERSION="${{ env.VERSION }}"
-        SIZE="${{ env.SIZE }}"
-        DATE="${{ needs.fetch_release.outputs.date }}"
-        BODY="${{ needs.fetch_release.outputs.body }}"
 
-        if jq -e ".apps[0].versions[] | select(.buildVersion==\"${TAG}\")" "$FILE" > /dev/null; then
-          echo "Version ${TAG} already exists"
-        else
-          jq ".apps[0].versions = [{
-            \"downloadURL\": \"${URL}\",
-            \"size\": ${SIZE},
-            \"version\": \"${VERSION}\",
-            \"buildVersion\": \"${TAG}\",
-            \"date\": \"${DATE}\",
-            \"localizedDescription\": \"${BODY}\",
-            \"minOSVersion\": null
-          }] + .apps[0].versions" "$FILE" > tmp.$$.json && mv tmp.$$.json "$FILE"
+        # Check if the version already exists using the download URL
+        URL="https://github.com/jurre111/Nyxian/raw/refs/heads/main/Resources/App/Nyxian.ipa" 
+        TAG="${{ env.TAG }}"
+        VERSION="${{ env.VERSION }}"
+        SIZE="${{ env.SIZE }}" # Now using the correct size in bytes
+        DATE="${{ env.DATE }}"
+        BODY="${{ env.BODY }}"
+
+        if [ -z "$URL" ]; then
+          echo "No IPA release URL found. Skipping update."
+          exit 0
         fi
+        jq ".apps[0].versions = [{
+          \"downloadURL\": \"${URL}\",
+          \"size\": ${SIZE},
+          \"version\": \"${VERSION}\",
+          \"buildVersion\": \"${TAG}\",
+          \"date\": \"${DATE}\",
+          \"localizedDescription\": \"${BODY}\",
+          \"minOSVersion\": null
+        }] + .apps[0].versions" "$FILE" > tmp.$$.json && mv tmp.$$.json "$FILE"
 
     - name: Commit changes
       uses: stefanzweifel/git-auto-commit-action@v4
       with:
-        commit_message: "Update Nyxian AltStore JSON and IPA for release ${{ needs.fetch_release.outputs.tag }}"
+        # This action now only finds the changes to source.json and Resources/App/Nyxian.ipa
+        commit_message: "Update Nyxian AltStore JSON and IPA for release ${{ env.TAG }}"
         commit_user_name: "GitHub Action"
