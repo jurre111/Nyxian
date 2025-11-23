@@ -60,8 +60,6 @@ jobs:
         echo "BODY=$BODY" >> $GITHUB_ENV
         echo "TAG=$TAG" >> $GITHUB_ENV
 
-    ---
-
     ## 🚀 Early Exit Check
 
     - name: Check if version already exists (EARLY EXIT)
@@ -83,7 +81,6 @@ jobs:
           echo "New version ${TAG} found. Proceeding with full update."
         fi
 
-    ---
 
     ## 🛠️ Full Update (Only runs if new version is detected)
 
