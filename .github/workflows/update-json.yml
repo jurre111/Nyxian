@@ -10,103 +10,96 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout Repository
+    - name: Checkout repository
       uses: actions/checkout@v3
       with:
-        # We need the source.json file for the early check, but defer LFS setup
-        lfs: false 
+        # Ensure LFS files are handled correctly
+        lfs: true 
 
-    - name: Install JSON Processor (jq)
+    - name: Configure Git LFS
       run: |
-        # jq is lightweight and necessary for the early check
+        # Install git-lfs on the Ubuntu runner
         sudo apt-get update
-        sudo apt-get install -y jq
+        sudo apt-get install -y git-lfs
+
+        # Initialize LFS in the repository
+        git lfs install
+
+        # Tell Git to track the large IPA file. This creates/updates .gitattributes
+        git lfs track "Resources/App/*.ipa"
 
     - name: Get latest Nyxian release info
       id: nyx
       run: |
         echo "Fetching all releases..."
-        RELEASES_FILE="releases.json"
-
         # Note: Using an authenticated request (via GITHUB_TOKEN) is better for rate limits
-        curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" https://api.github.com/repos/ProjectNyxian/Nyxian/releases > "$RELEASES_FILE"
+        RELEASES_JSON=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" https://api.github.com/repos/ProjectNyxian/Nyxian/releases)
 
-        if [ "$(jq 'type' "$RELEASES_FILE")" != '"array"' ]; then
+        # Check if the fetch was successful
+        if [ "$(echo "$RELEASES_JSON" | jq 'type')" != '"array"' ]; then
           echo "Error fetching releases or no releases found."
           exit 1
         fi
-        
-        # Find the latest release that contains an .ipa asset
-        RELEASE_INFO=$(jq -r '.[] | select(.assets[]? | .name | endswith(".ipa"))' "$RELEASES_FILE" | head -n 1)
 
-        if [ -z "$RELEASE_INFO" ]; then
-            echo "No releases with an IPA asset found."
-            exit 0
+        for i in $(seq 0 $(($(echo "$RELEASES_JSON" | jq 'length') - 1))); do
+            # Filter assets to find the first one ending in ".ipa"
+            URL=$(echo "$RELEASES_JSON" | jq -r ".[$i].assets[]? | select(.name | endswith(\".ipa\")) | .browser_download_url")
+            
+            if [ -n "$URL" ]; then
+                TAG=$(echo "$RELEASES_JSON" | jq -r ".[$i].tag_name")
+                DATE=$(echo "$RELEASES_JSON" | jq -r ".[$i].published_at")
+                
+                # Format the release body: escape newlines (\\n) and double quotes (\\") for safe JSON insertion
+                BODY=$(echo "$RELEASES_JSON" | jq -r ".[$i].body" | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')
+
+                echo "Found latest release with IPA: $TAG"
+
+                # Export variables to be used in subsequent steps
+                echo "URL=$URL" >> $GITHUB_ENV
+                echo "DATE=$DATE" >> $GITHUB_ENV
+                echo "BODY=$BODY" >> $GITHUB_ENV
+                echo "TAG=$TAG" >> $GITHUB_ENV
+
+                break  # use the first found release with IPA (which should be the latest)
+            fi
+        done
+        
+        if [ -z "${{ env.TAG }}" ]; then
+          echo "No release with an IPA was found."
+          # TAG will be empty, causing the next step to correctly report "is_new=false"
         fi
 
-        # Extract required information from the latest release
-        URL=$(echo "$RELEASE_INFO" | jq -r ".assets[] | select(.name | endswith(\".ipa\")) | .browser_download_url" | head -n 1)
-        TAG=$(echo "$RELEASE_INFO" | jq -r ".tag_name")
-        DATE=$(echo "$RELEASE_INFO" | jq -r ".published_at")
-        
-        # Format the release body for safe JSON insertion
-        BODY=$(echo "$RELEASE_INFO" | jq -r ".body" | sed -e ':a;N;$!ba;s/\n/\\n/g' -e 's/"/\\"/g')
-
-        echo "Found latest release $TAG at $URL"
-
-        # Export variables
-        echo "URL=$URL" >> $GITHUB_ENV
-        echo "DATE=$DATE" >> $GITHUB_ENV
-        echo "BODY=$BODY" >> $GITHUB_ENV
-        echo "TAG=$TAG" >> $GITHUB_ENV
-
-    ## 🚀 Early Exit Check
-
-    - name: Check if version already exists (EARLY EXIT)
+    - name: Check if release is new
+      id: check_release
+      outputs:
+        is_new: ${{ steps.check_release.outputs.is_new }}
       run: |
-        FILE=source.json
-        TAG="${{ env.TAG }}"
+        TAG_TO_CHECK="${{ env.TAG }}"
         
-        if [ -z "$TAG" ]; then
-          echo "No TAG found. Exiting."
+        if [ -z "$TAG_TO_CHECK" ]; then
+          echo "No release tag found from previous step. Stopping."
+          echo "is_new=false" >> $GITHUB_OUTPUT
           exit 0
         fi
 
-        # Check if a version with the same buildVersion (TAG) exists in the JSON
-        if jq -e ".apps[0].versions[] | select(.buildVersion==\"${TAG}\")" "$FILE" > /dev/null; then
-          echo "Version with buildVersion ${TAG} already exists. Stopping workflow to avoid unnecessary processing."
-          # Use a specific non-zero exit code (78) to signal a controlled skip/cancellation
-          exit 78 
-        else
-          echo "New version ${TAG} found. Proceeding with full update."
-        fi
-
-
-    ## 🛠️ Full Update (Only runs if new version is detected)
-
-    - name: Configure Git LFS and Install plist-utils
-      run: |
-        # Install git-lfs and plist-utils now, only if a new version needs processing
-        sudo apt-get update
-        sudo apt-get install -y git-lfs libplist-utils
-
-        # Initialize LFS in the repository
-        git lfs install
-        # Tell Git to track the large IPA file
-        git lfs track "Resources/App/*.ipa"
+        FILE=source.json
         
-        # We need to explicitly check out LFS files now that LFS is configured
-        git lfs pull || echo "No LFS files to pull or error pulling LFS files."
-
+        echo "Checking for buildVersion '$TAG_TO_CHECK' in $FILE..."
+        if jq -e ".apps[0].versions[] | select(.buildVersion==\"${TAG_TO_CHECK}\")" "$FILE" > /dev/null; then
+          echo "Version ${TAG_TO_CHECK} already exists. No update needed."
+          echo "is_new=false" >> $GITHUB_OUTPUT
+        else
+          echo "Version ${TAG_TO_CHECK} is new. Proceeding with update."
+          echo "is_new=true" >> $GITHUB_OUTPUT
+        fi
 
     - name: Modify App Package
+      # This step now only runs if the check_release step determined it's a new version
+      if: steps.check_release.outputs.is_new == 'true'
       run: |
-        # ... (rest of the steps remain the same) ...
-        if [ -z "${{ env.URL }}" ]; then
-          echo "No IPA URL found. Skipping IPA modification."
-          exit 0
-        fi
-
+        echo "Starting IPA modification for new release ${{ env.TAG }}"
+        sudo apt-get update && sudo apt-get install -y libplist-utils
+        
         # 1. Download original IPA (using a unique temporary name)
         wget "${{ env.URL }}" -O Nyxian_temp.ipa
         
@@ -118,11 +111,6 @@ jobs:
         VERSION=$(grep "buildVersion" AppInfo.swift | sed -E 's/.*buildVersion: Double = ([0-9.]+).*/\1/')
         APP_PATH=$(find Nyxian_extracted/Payload -name "*.app" -maxdepth 1)
         PLIST_PATH="${APP_PATH}/Info.plist"
-
-        if [ -z "$VERSION" ]; then
-            echo "Warning: Could not extract VERSION from AppInfo.swift. Using TAG as fallback."
-            VERSION="${{ env.TAG }}"
-        fi
 
         plistutil -replace CFBundleVersion -string "${{ env.TAG }}" "${PLIST_PATH}"
         plistutil -replace CFBundleShortVersionString -string "${VERSION}" "${PLIST_PATH}"
@@ -144,27 +132,35 @@ jobs:
         echo "SIZE=$SIZE" >> $GITHUB_ENV
 
     - name: Cleanup Temporary Artifacts
+      # Only run if the modification step ran
+      if: steps.check_release.outputs.is_new == 'true'
       run: |
-        echo "Cleaning up large temporary files to prevent Git size violation..."
+        echo "Cleaning up large temporary files..."
+        # Remove the unzipped folder (contains oversized files)
         rm -rf Nyxian_extracted
+        # Remove all temporary IPA files
         rm -f Nyxian_temp.ipa Nyxian_modified.ipa
+        # Remove the downloaded Swift file
         rm -f AppInfo.swift
 
-
     - name: Update AltStore JSON
+      # Only run if the modification step ran
+      if: steps.check_release.outputs.is_new == 'true'
       run: |
         FILE=source.json
 
+        # Get all variables from the environment
         URL="https://github.com/jurre111/Nyxian/raw/refs/heads/main/Resources/App/Nyxian.ipa" 
         TAG="${{ env.TAG }}"
         VERSION="${{ env.VERSION }}"
-        SIZE="${{ env.SIZE }}" 
+        SIZE="${{ env.SIZE }}" # Now using the correct size in bytes
         DATE="${{ env.DATE }}"
         BODY="${{ env.BODY }}"
 
-        echo "Adding new version ${TAG} as the FIRST entry."
+        echo "Adding new version ${TAG} as the FIRST entry in $FILE."
           
-        # Prepend the new version object to the existing versions array
+        # We no longer need the if/else check inside this script,
+        # because this step only runs if the 'check_release' step passed.
         jq ".apps[0].versions = [{
           \"downloadURL\": \"${URL}\",
           \"size\": ${SIZE},
@@ -174,9 +170,13 @@ jobs:
           \"localizedDescription\": \"${BODY}\",
           \"minOSVersion\": null
         }] + .apps[0].versions" "$FILE" > tmp.$$.json && mv tmp.$$.json "$FILE"
+        echo "source.json updated."
 
     - name: Commit changes
+      # Only run if we actually updated the JSON
+      if: steps.check_release.outputs.is_new == 'true'
       uses: stefanzweifel/git-auto-commit-action@v4
       with:
+        # This action now only finds the changes to source.json, .gitattributes, and Resources/App/Nyxian.ipa
         commit_message: "Update Nyxian AltStore JSON and IPA for release ${{ env.TAG }}"
         commit_user_name: "GitHub Action"
