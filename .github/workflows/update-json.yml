@@ -116,7 +116,9 @@ jobs:
         plistutil -replace CFBundleShortVersionString -string "${VERSION}" "${PLIST_PATH}"
         
         # 4. Re-package the modified IPA using a temporary name
-        zip -r Nyxian_modified.ipa Nyxian_extracted/Payload
+        cd Nyxian_extracted
+        zip -r ../Nyxian_modified.ipa Payload
+        cd ..
 
         # 5. Create the target directory structure
         mkdir -p Resources/App
