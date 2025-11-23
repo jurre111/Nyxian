@@ -108,11 +108,12 @@ jobs:
         unzip Nyxian_temp.ipa -d Nyxian_extracted
         VERSION=$(grep "buildVersion" AppInfo.swift | sed -E 's/.*buildVersion: Double = ([0-9.]+).*/\1/')
         APP_PATH=$(find Nyxian_extracted/Payload -name "*.app" -maxdepth 1)
-        PLIST_PATH="${APP_PATH}/Info"
+        PLIST_PATH="${APP_PATH}/Info.plist"
 
         echo "Modifying version in Info.plist..."
-        /usr/bin/defaults write "${PLIST_PATH}" CFBundleVersion -string "${{ env.TAG }}"
-        /usr/bin/defaults write "${PLIST_PATH}" CFBundleShortVersionString -string "${VERSION}" 
+        /usr/bin/plutil -replace CFBundleVersion -string "${{ env.TAG }}" "${PLIST_PATH}.plist"
+        /usr/bin/plutil -replace CFBundleShortVersionString -string "${VERSION}" "${PLIST_PATH}.plist"
+
         
         # 4. Re-package the modified IPA using a temporary name
         cd Nyxian_extracted
