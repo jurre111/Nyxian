@@ -57,48 +57,53 @@ jobs:
 
         sudo apt-get update && sudo apt-get install -y libplist-utils
         
-        # 1. Download original IPA
-        wget "${{ env.URL }}" -O Nyxian_original.ipa
+        # 1. Download original IPA (using a unique temporary name)
+        wget "${{ env.URL }}" -O Nyxian_temp.ipa
         
         # 2. Download source file
         wget https://raw.githubusercontent.com/ProjectNyxian/Nyxian/refs/heads/main/Nyxian/UI/Settings/AppInfo.swift -O AppInfo.swift
 
         # 3. Unzip and modify plist
-        unzip Nyxian_original.ipa -d Nyxian
+        unzip Nyxian_temp.ipa -d Nyxian_extracted
         VERSION=$(grep "buildVersion" AppInfo.swift | sed -E 's/.*buildVersion: Double = ([0-9.]+).*/\1/')
-        APP_PATH=$(find Nyxian/Payload -name "*.app" -maxdepth 1)
+        APP_PATH=$(find Nyxian_extracted/Payload -name "*.app" -maxdepth 1)
         PLIST_PATH="${APP_PATH}/Info.plist"
 
         plistutil -replace CFBundleVersion -string "${{ env.TAG }}" "${PLIST_PATH}"
         plistutil -replace CFBundleShortVersionString -string "${VERSION}" "${PLIST_PATH}"
         
         # 4. Re-package the modified IPA using a temporary name
-        zip -r Nyxian_modified.ipa Nyxian/*
+        zip -r Nyxian_modified.ipa Nyxian_extracted/*
 
-        # --- CRITICAL FIXES FOR FILE PLACEMENT AND SIZE ---
-        
         # 5. Create the target directory structure
-        # The -p flag means it won't error if the directories already exist.
         mkdir -p Resources/App
         
         # 6. Copy the modified IPA to the final destination
-        # This replaces the old file or creates the new one in the correct path.
         cp Nyxian_modified.ipa Resources/App/Nyxian.ipa
 
-        # 7. FIX: Calculate size of the final, committed file (in bytes)
+        # 7. Calculate size of the final, committed file (in bytes)
         SIZE=$(stat -c%s Resources/App/Nyxian.ipa)
         
         # 8. Export variables
         echo "VERSION=$VERSION" >> $GITHUB_ENV
         echo "SIZE=$SIZE" >> $GITHUB_ENV
-        # --- END CRITICAL FIXES ---
+
+    - name: Cleanup Temporary Artifacts
+      run: |
+        echo "Cleaning up large temporary files to prevent Git size violation..."
+        # Remove the unzipped folder (contains oversized files)
+        rm -rf Nyxian_extracted
+        # Remove all temporary IPA files
+        rm -f Nyxian_temp.ipa Nyxian_modified.ipa
+        # Remove the downloaded Swift file
+        rm -f AppInfo.swift
+
 
     - name: Update AltStore JSON
       run: |
         FILE=source.json
 
         # Check if the version already exists using the download URL
-        # FIX: URL now points to the file inside Resources/App/
         URL="https://jurre111.github.io/Nyxian/Resources/App/Nyxian.ipa" 
         TAG="${{ env.TAG }}"
         VERSION="${{ env.VERSION }}"
@@ -133,6 +138,6 @@ jobs:
     - name: Commit changes
       uses: stefanzweifel/git-auto-commit-action@v4
       with:
-        # This action now commits both the modified source.json AND the modified Nyxian.ipa
+        # This action now only finds the changes to source.json and Resources/App/Nyxian.ipa
         commit_message: "Update Nyxian AltStore JSON and IPA for release ${{ env.TAG }}"
         commit_user_name: "GitHub Action"
