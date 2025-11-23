@@ -71,8 +71,6 @@ jobs:
 
     - name: Check if release is new
       id: check_release
-      outputs:
-        is_new: ${{ steps.check_release.outputs.is_new }}
       run: |
         TAG_TO_CHECK="${{ env.TAG }}"
         
@@ -92,6 +90,8 @@ jobs:
           echo "Version ${TAG_TO_CHECK} is new. Proceeding with update."
           echo "is_new=true" >> $GITHUB_OUTPUT
         fi
+      outputs:
+        is_new: ${{ steps.check_release.outputs.is_new }}
 
     - name: Modify App Package
       # This step now only runs if the check_release step determined it's a new version
