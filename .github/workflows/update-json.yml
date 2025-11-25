@@ -24,36 +24,35 @@ jobs:
         FILE=source.json
 
         echo "Fetching all releases..."
+        # Note: Using an authenticated request (via GITHUB_TOKEN) is better for rate limits
         RELEASES_JSON=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" https://api.github.com/repos/ProjectNyxian/Nyxian/releases)
 
+        # Check if the fetch was successful
         if [ "$(echo "$RELEASES_JSON" | jq 'type')" != '"array"' ]; then
           echo "Error fetching releases or no releases found."
           exit 1
         fi
 
         for i in $(seq 0 $(($(echo "$RELEASES_JSON" | jq 'length') - 1))); do
+            # Filter assets to find the first one ending in ".ipa"
             URL=$(echo "$RELEASES_JSON" | jq -r ".[$i].assets[]? | select(.name | endswith(\".ipa\")) | .browser_download_url")
             
             if [ -n "$URL" ]; then
                 TAG=$(echo "$RELEASES_JSON" | jq -r ".[$i].tag_name")
                 DATE=$(echo "$RELEASES_JSON" | jq -r ".[$i].published_at")
                 
-                # Get the raw body text and strip problematic '\r' (carriage return) characters
-                BODY_RAW=$(echo "$RELEASES_JSON" | jq -r ".[$i].body" | tr -d '\r')
+                # Format the release body: escape newlines (\\n) and double quotes (\\") for safe JSON insertion
+                BODY=$(echo "$RELEASES_JSON" | jq -r ".[$i].body" | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')
 
                 echo "Found release $TAG at $URL"
 
                 # Export variables to be used in subsequent steps
                 echo "URL=$URL" >> $GITHUB_OUTPUT
                 echo "DATE=$DATE" >> $GITHUB_OUTPUT
+                echo "BODY=$BODY" >> $GITHUB_OUTPUT
                 echo "TAG=$TAG" >> $GITHUB_OUTPUT
 
-                # Use GitHub's multiline output syntax to preserve newlines correctly
-                echo "BODY<<EOF" >> $GITHUB_OUTPUT
-                echo "$BODY_RAW" >> $GITHUB_OUTPUT
-                echo "EOF" >> $GITHUB_OUTPUT
-
-                break
+                break  # use the first found release with IPA (which should be the latest)
             fi
         done
 
@@ -72,7 +71,7 @@ jobs:
     env:
       URL: ${{ needs.check_version.outputs.url }}
       DATE: ${{ needs.check_version.outputs.date }}
-      BODY: ${{ needs.check_version.outputs.body }} # This now receives the raw, multiline string
+      BODY: ${{ needs.check_version.outputs.body }}
       TAG: ${{ needs.check_version.outputs.tag }}
 
     steps:
@@ -82,8 +81,14 @@ jobs:
 
     - name: Install and Configure Dependenies
       run: |
+        # Install git-lfs on the MacOS runner
         brew install git-lfs
+
+        # Initialize LFS in the repository
         git lfs install
+
+        # Tell Git to track the large IPA file in the Resources/App directory using LFS
+        # This creates or updates the .gitattributes file, which the auto-commit action will pick up.
         git lfs track "Resources/App/*.ipa"
 
     - name: Modify App Package
@@ -93,9 +98,13 @@ jobs:
           exit 0
         fi
         
+        # 1. Download original IPA (using a unique temporary name)
         wget "${{ env.URL }}" -O Nyxian_temp.ipa
+        
+        # 2. Download source file
         wget https://raw.githubusercontent.com/ProjectNyxian/Nyxian/refs/heads/main/Nyxian/UI/Settings/AppInfo.swift -O AppInfo.swift
 
+        # 3. Unzip and modify plist
         unzip Nyxian_temp.ipa -d Nyxian_extracted
         VERSION=$(sed -nE 's/.*buildVersion: Double = ([0-9.]+).*/\1/p' AppInfo.swift)
         APP_PATH=$(find Nyxian_extracted/Payload -name "*.app" -maxdepth 1)
@@ -104,72 +113,68 @@ jobs:
         echo "Modifying version in Info.plist..."
         /usr/bin/plutil -replace CFBundleVersion -string "${{ env.TAG }}" "${PLIST_PATH}"
         /usr/bin/plutil -replace CFBundleShortVersionString -string "${VERSION}" "${PLIST_PATH}"
+
         
+        # 4. Re-package the modified IPA using a temporary name
         cd Nyxian_extracted
         zip -r ../Nyxian_modified.ipa Payload
         cd ..
 
+        # 5. Create the target directory structure
         mkdir -p Resources/App
-        cp Nyxian_modified.ipa Resources/App/Nyxian.ipa
         
+        # 6. Copy the modified IPA to the final destination
+        cp Nyxian_modified.ipa Resources/App/Nyxian.ipa
+
+        # 7. Calculate size of the final, committed file (in bytes)
         SIZE=$(stat -f%z Resources/App/Nyxian.ipa)
         
+        # 8. Export variables
         echo "VERSION=$VERSION" >> $GITHUB_ENV
         echo "SIZE=$SIZE" >> $GITHUB_ENV
 
     - name: Cleanup Temporary Artifacts
       run: |
         echo "Cleaning up large temporary files to prevent Git size violation..."
+        # Remove the unzipped folder (contains oversized files)
         rm -rf Nyxian_extracted
+        # Remove all temporary IPA files
         rm -f Nyxian_temp.ipa Nyxian_modified.ipa
+        # Remove the downloaded Swift file
         rm -f AppInfo.swift
-        
     - name: Update AltStore JSON
       run: |
         FILE=source.json
-        FINAL_URL="https://github.com/jurre111/Nyxian/raw/refs/heads/main/Resources/App/Nyxian.ipa" 
 
-        if [ -z "${{ env.TAG }}" ] || [ -z "${{ env.VERSION }}" ] || [ -z "${{ env.SIZE }}" ]; then
-          echo "Missing required environment variables (TAG, VERSION, or SIZE). Skipping update."
-          exit 1
+        # Check if the version already exists using the download URL
+        URL="https://github.com/jurre111/Nyxian/raw/refs/heads/main/Resources/App/Nyxian.ipa" 
+        TAG="${{ env.TAG }}"
+        VERSION="${{ env.VERSION }}"
+        SIZE="${{ env.SIZE }}" # Now using the correct size in bytes
+        DATE="${{ env.DATE }}"
+        BODY="${{ env.BODY }}"
+
+        if [ -z "$URL" ]; then
+          echo "No IPA release URL found. Skipping update."
+          exit 0
         fi
-
-        # Use --arg to safely inject all variables.
-        # The jq filter now performs two actions:
-        # 1. Prepends the new, clean version.
-        # 2. Applies a map filter to the existing versions to remove any remaining raw '\r' characters globally.
-        jq --arg url "$FINAL_URL" \
-           --argjson size "${{ env.SIZE }}" \
-           --arg version "${{ env.VERSION }}" \
-           --arg tag "${{ env.TAG }}" \
-           --arg date "${{ env.DATE }}" \
-           --arg body "${{ env.BODY }}" \
-           '.apps[0].versions = 
-             (
-               [{
-                 "downloadURL": $url,
-                 "size": $size,
-                 "version": $version,
-                 "buildVersion": $tag,
-                 "date": $date,
-                 "localizedDescription": $body,
-                 "minOSVersion": null
-               }]
-             ) 
-             + 
-             (
-               .apps[0].versions | 
-               map(.localizedDescription |= sub("\r"; ""; "g")) # <-- CLEANUP FILTER APPLIED TO OLD ENTRIES
-             )' "$FILE" > tmp.$$.json && mv tmp.$$.json "$FILE"
-
+        jq ".apps[0].versions = [{
+          \"downloadURL\": \"${URL}\",
+          \"size\": ${SIZE},
+          \"version\": \"${VERSION}\",
+          \"buildVersion\": \"${TAG}\",
+          \"date\": \"${DATE}\",
+          \"localizedDescription\": \"${BODY}\",
+          \"minOSVersion\": null
+        }] + .apps[0].versions" "$FILE" > tmp.$$.json && mv tmp.$$.json "$FILE"
     - name: Upload a Build Artifact
       uses: actions/upload-artifact@v4
       with:
         name: Nyxian-IPA
         path: Resources/App/Nyxian.ipa
-        
     - name: Commit changes
       uses: stefanzweifel/git-auto-commit-action@v4
       with:
+        # This action now only finds the changes to source.json and Resources/App/Nyxian.ipa
         commit_message: "Update Nyxian AltStore JSON and IPA for release ${{ env.TAG }}"
         commit_user_name: "GitHub Action"
