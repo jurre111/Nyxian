@@ -164,7 +164,7 @@ jobs:
           \"version\": \"${VERSION}\",
           \"buildVersion\": \"${TAG}\",
           \"date\": \"${DATE}\",
-          \"localizedDescription\": \${BODY}\,
+          \"localizedDescription\": ${BODY},
           \"minOSVersion\": null
         }] + .apps[0].versions" "$FILE" > tmp.$$.json && mv tmp.$$.json "$FILE"
     - name: Upload a Build Artifact
