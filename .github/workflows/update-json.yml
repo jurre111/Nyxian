@@ -152,7 +152,7 @@ jobs:
         VERSION="${{ env.VERSION }}"
         SIZE="${{ env.SIZE }}" # Now using the correct size in bytes
         DATE="${{ env.DATE }}"
-        BODY=${{ env.BODY }}
+        BODY="${{ env.BODY }}"
 
         if [ -z "$URL" ]; then
           echo "No IPA release URL found. Skipping update."
