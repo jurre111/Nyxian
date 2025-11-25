@@ -39,7 +39,6 @@ jobs:
                 DATE=$(echo "$RELEASES_JSON" | jq -r ".[$i].published_at")
                 
                 # Get the raw body text and strip problematic '\r' (carriage return) characters
-                # <--- FIX 1: This line is new/changed
                 BODY_RAW=$(echo "$RELEASES_JSON" | jq -r ".[$i].body" | tr -d '\r')
 
                 echo "Found release $TAG at $URL"
@@ -49,7 +48,7 @@ jobs:
                 echo "DATE=$DATE" >> $GITHUB_OUTPUT
                 echo "TAG=$TAG" >> $GITHUB_OUTPUT
 
-                # <--- FIX 2: Use GitHub's multiline output syntax
+                # Use GitHub's multiline output syntax to preserve newlines correctly
                 echo "BODY<<EOF" >> $GITHUB_OUTPUT
                 echo "$BODY_RAW" >> $GITHUB_OUTPUT
                 echo "EOF" >> $GITHUB_OUTPUT
@@ -135,23 +134,33 @@ jobs:
           exit 1
         fi
 
-        # <--- FIX 3: This entire jq command is the fix.
-        # It uses --arg to safely pass variables, especially the multiline $body.
+        # Use --arg to safely inject all variables.
+        # The jq filter now performs two actions:
+        # 1. Prepends the new, clean version.
+        # 2. Applies a map filter to the existing versions to remove any remaining raw '\r' characters globally.
         jq --arg url "$FINAL_URL" \
            --argjson size "${{ env.SIZE }}" \
            --arg version "${{ env.VERSION }}" \
            --arg tag "${{ env.TAG }}" \
            --arg date "${{ env.DATE }}" \
            --arg body "${{ env.BODY }}" \
-           '.apps[0].versions = [{
-             "downloadURL": $url,
-             "size": $size,
-             "version": $version,
-             "buildVersion": $tag,
-             "date": $date,
-             "localizedDescription": $body,
-             "minOSVersion": null
-           }] + .apps[0].versions' "$FILE" > tmp.$$.json && mv tmp.$$.json "$FILE"
+           '.apps[0].versions = 
+             (
+               [{
+                 "downloadURL": $url,
+                 "size": $size,
+                 "version": $version,
+                 "buildVersion": $tag,
+                 "date": $date,
+                 "localizedDescription": $body,
+                 "minOSVersion": null
+               }]
+             ) 
+             + 
+             (
+               .apps[0].versions | 
+               map(.localizedDescription |= sub("\r"; ""; "g")) # <-- CLEANUP FILTER APPLIED TO OLD ENTRIES
+             )' "$FILE" > tmp.$$.json && mv tmp.$$.json "$FILE"
 
     - name: Upload a Build Artifact
       uses: actions/upload-artifact@v4
