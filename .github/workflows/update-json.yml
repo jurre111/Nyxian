@@ -43,7 +43,7 @@ jobs:
                 
                 # Format the release body: escape newlines (\\n) and double quotes (\\") for safe JSON insertion
                 BODY=$(echo "$RELEASES_JSON" | jq -r ".[$i].body" | sed ':a;N;$!ba;s/\\/\\\\/g;s/\n/\\n/g;s/"/\\"/g')
-                echo $BODY
+                echo "$BODY"
 
                 echo "Found release $TAG at $URL"
 
