@@ -21,6 +21,15 @@
       "versions": [
         {
           "downloadURL": "https://github.com/jurre111/Nyxian/raw/refs/heads/main/Resources/App/Nyxian.ipa",
+          "size": 155111557,
+          "version": "0.7",
+          "buildVersion": "20251125a",
+          "date": "2025-11-25T11:18:04Z",
+          "localizedDescription": "### Changelog\r\n- Fixed some problems with utility support, such as the keyboard not appearing(next build I gonna fix the touch problems on `LDEWindowSessionTerminal` dw)\r\n- Fixed iPhone support of Nyxian.\r\n- Replaced seqlock with my new low level reflock which makes Nyxians kernel API much more lightweight and easy to use, less prone to fail.\r\n- Added headless application v2, the new one is not hook based anymore.\r\n- Fixed the full screen stutter some people reported on the bottom of their screens.\r\n- Added entitlement config to projects, now you can set nyxian entitlements directly at development of your apps.\r\n- Switched to iOS 26 SDK.\r\n- Added a new project config key `LDEVersion` which sets the version you wanna target as the highest iOS version, if you dont want Liquid Glass in your app then you shall set it to `18.5` for example while `LDEMinimumVersion` sets the version you wanna have at minimum.\r\n- Fixed a few more sysctl syscalls such as `KERN_PROC_PID`,`KERN_PROC_UID` and `KERN_PROC_RUID`.\r\n- Made killing processes which have more Childs faster and more efficient, shall be now 2.5 times faster, than before.\r\n- Fixed a vulnerability regarding `PEEntitlementProcessElevate` in which a process while elevation triggers on a other thread the same elevation which causes unexpected process structure corruption, was addressed by implementing reflock as mentioned above.\r\n- Added `PEEntitlementPlatform` as a security feature to harden daemons in the process model so normal processes cannot interact with them like with normal processes running in Nyxian.\r\n- Added `PEEntitlementProcessSpawnInheriteEntitlements` as another security feature to prevent privilege escalations, such as a sandboxed process executing a application that has at trust cache level more entitlements, if a vulnerability exists in the privileged binary then the sandboxed process could easier exploit that. While that daemons and nyxian doesnt have that entitlement set in its entitlement layer, because Nyxian shall not inherit its entitlements to the child process lol. Its a curse of unbinding entitlement, when a process has it all process it spawns have the same entitlements as it self 1:1.",
+          "minOSVersion": null
+        },
+        {
+          "downloadURL": "https://github.com/jurre111/Nyxian/raw/refs/heads/main/Resources/App/Nyxian.ipa",
           "size": 155132209,
           "version": "0.7",
           "buildVersion": "20251122a",
