@@ -42,9 +42,9 @@ jobs:
                 DATE=$(echo "$RELEASES_JSON" | jq -r ".[$i].published_at")
                 
                 # Format the release body: escape newlines (\\n) and double quotes (\\") for safe JSON insertion
-                BODY=$(echo "$RELEASES_JSON" | jq -r ".[$i].body" | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')
+                BODY=$(echo "$RELEASES_JSON" | jq -r ".[$i].body" | sed ':a;N;$!ba;s/\\/\\\\/g;s/\n/\\n/g;s/"/\\"/g')
                 echo $BODY
-                
+
                 echo "Found release $TAG at $URL"
 
                 # Export variables to be used in subsequent steps
