@@ -42,7 +42,7 @@ jobs:
                 DATE=$(echo "$RELEASES_JSON" | jq -r ".[$i].published_at")
                 
                 # Format the release body: escape newlines (\\n) and double quotes (\\") for safe JSON insertion
-                BODY=$(jq -r ".[$i].body | @json" <<< "$RELEASES_JSON")
+                BODY=$(echo "$RELEASES_JSON" | jq -r ".[$i].body" | sed ':a;N;$!ba;s/\n/\\n/g' | sed 's/"/\\"/g')
 
                 echo "Found release $TAG at $URL"
 
@@ -152,7 +152,7 @@ jobs:
         VERSION="${{ env.VERSION }}"
         SIZE="${{ env.SIZE }}" # Now using the correct size in bytes
         DATE="${{ env.DATE }}"
-        BODY="${{ env.BODY }}"
+        BODY=$(jq -Rn --arg body "${{ env.BODY }}" '$body')
 
         if [ -z "$URL" ]; then
           echo "No IPA release URL found. Skipping update."
